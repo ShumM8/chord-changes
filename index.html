@@ -190,6 +190,32 @@ h2 { margin: 0; font: italic 600 clamp(1.8rem, 5vw, 2.6rem)/1.1 var(--display); 
 .ghost:disabled { opacity: .6; cursor: progress; }
 .caption { margin: 0; font-size: .86rem; color: var(--muted); }
 
+.songbox, .nextbox { display: grid; gap: 10px; min-width: 0; }
+.songtools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.songmeta { font: 500 .8rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.primary { min-height: 38px; padding: 4px 14px; background: var(--accent); color: var(--on-accent); border: 0; border-radius: 4px; font-weight: 600; }
+.sec { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; padding: 9px 6px; border-bottom: 1px solid var(--line); }
+.sec.playing { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
+.sec select { min-height: 34px; padding: 2px 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; font: inherit; font-size: .9rem; color: inherit; }
+.secbody { min-width: 0; background: none; border: 0; padding: 0; text-align: left; }
+.secbody .ch { display: block; font: italic 500 1.05rem/1.3 var(--display); overflow-wrap: anywhere; }
+.secbody .ky { display: block; font: 400 .76rem var(--mono); color: var(--muted); }
+.linkchord { font-style: normal; font: 500 .78rem var(--mono); color: var(--tension); }
+.x { width: 36px; height: 36px; background: none; border: 1px solid var(--line); border-radius: 4px; font-size: 1.05rem; line-height: 1; }
+.opt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; padding: 12px 6px; border-bottom: 1px solid var(--line); }
+.opt .top { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+.opt .tag { font-weight: 700; color: var(--accent); }
+.opt .ky { font: 400 .78rem var(--mono); color: var(--muted); }
+.opt .ch { font: italic 500 1.12rem/1.3 var(--display); overflow-wrap: anywhere; }
+.opt .wy { margin: 0; font-size: .92rem; color: var(--muted); max-width: 68ch; }
+.opt .acts { display: flex; gap: 6px; }
+.opt .main { display: grid; gap: 3px; min-width: 0; }
+@media (max-width: 760px) {
+  .opt { grid-template-columns: minmax(0, 1fr); }
+  .sec { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+  .secbody { grid-column: 1 / -1; grid-row: 2; }
+  .sec .x { grid-column: 4; grid-row: 1; }
+}
 .more { display: grid; gap: 10px; }
 h3 { margin: 0; font: italic 600 1.45rem/1.2 var(--display); }
 .morehead { display: grid; gap: 8px; }
@@ -293,6 +319,33 @@ h3 { margin: 0; font: italic 600 1.45rem/1.2 var(--display); }
       </div>
     </div>
   </main>
+
+  <section class="songbox" aria-label="Your song">
+    <h3 id="songTitle">Your song</h3>
+    <p class="note" id="songEmpty">Pick a next step below, or add the progression above. Sections stack up here so you can hear the whole chain.</p>
+    <div class="rows" id="songRows" hidden></div>
+    <div class="songtools">
+      <button class="ghost" id="songAdd" type="button">Add this progression</button>
+      <span id="songActions" class="songtools" hidden>
+        <button class="primary" id="songPlay" type="button">Play song</button>
+        <button class="ghost" id="songCopy" type="button">Copy song</button>
+        <button class="ghost" id="songMidi" type="button">Download song MIDI</button>
+        <button class="ghost" id="songWav" type="button">Download song WAV</button>
+        <button class="ghost" id="songClear" type="button">Clear song</button>
+      </span>
+      <span class="songmeta" id="songMeta"></span>
+    </div>
+  </section>
+
+  <section class="nextbox" aria-label="What comes next">
+    <h3 id="nextTitle">What comes next</h3>
+    <p class="note">Each option moves somewhere new using a different theory idea. Hear plays the last two bars of this progression into the next one.</p>
+    <div class="songtools">
+      <button class="ghost" id="nextShuffle" type="button">Show different progressions</button>
+      <label class="check"><input id="useLink" type="checkbox" checked> Use link chords</label>
+    </div>
+    <div class="rows" id="nextRows"></div>
+  </section>
 
   <section class="more" aria-label="More progressions">
     <div class="morehead">
@@ -532,7 +585,7 @@ function voiceAll(chords) {
 }
 
 /* ---------- State ---------- */
-const S = { chord:null, cands:[], ranked:[], sel:null, chords:[], voices:[], reading:"all", style:"any", rotate:true, active:0, feel:"held", tempo:84, playing:false, styleFallback:false, lastRoll:null };
+const S = { chord:null, cands:[], ranked:[], sel:null, chords:[], voices:[], reading:"all", style:"any", rotate:true, active:0, feel:"held", tempo:84, playing:false, styleFallback:false, lastRoll:null, song:[], queue:null, shuffle:0, useLink:true, clearArmed:false };
 const $ = id => document.getElementById(id);
 const el = (t, cls, txt) => { const e = document.createElement(t); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; };
 
@@ -578,7 +631,7 @@ function select(c) {
   S.voices = voiceAll(S.chords);
   S.active = Math.max(0, S.chords.findIndex(x => x.mine));
   renderSheet();
-  if (S.playing) startPlay(0);
+  if (S.queue) stopPlay(); else if (S.playing) startPlay(0);
 }
 
 /* ---------- Rendering ---------- */
@@ -607,10 +660,13 @@ function renderSheet() {
   drawCircle();
   updateActive();
   markCurrentRow();
+  renderNext();
 }
 function updateActive() {
   document.querySelectorAll(".bar").forEach((b,i) => b.classList.toggle("active", i === S.active));
-  const ch = S.chords[S.active], v = S.voices[S.active];
+  showChord(S.chords[S.active], S.voices[S.active]);
+}
+function showChord(ch, v) {
   $("now").textContent = pretty(ch.sym);
   $("tones").textContent = tonesOf(ch).map(pretty).join("  ");
   document.querySelectorAll("#piano button").forEach(k => {
@@ -696,6 +752,213 @@ function renderList() {
   markCurrentRow();
 }
 function markCurrentRow() { document.querySelectorAll(".row").forEach(r => { const on = r._c === S.sel; r.classList.toggle("current", on); if (on) r.setAttribute("aria-current","true"); else r.removeAttribute("aria-current"); }); }
+
+/* ---------- Song chaining ---------- */
+const keyPref = (pc, minor, from) => {
+  const flat = from && /b/.test(from), p = (pc + 120) % 12;
+  if (flat && p === 6 && !minor) return "Gb";
+  if (flat && p === 8 && minor) return "Ab";
+  return (minor ? MIN_PREF : MAJ_PREF)[p];
+};
+const keyLabel = (t, minor) => `${pretty(t)} ${minor ? "minor" : "major"}`;
+function plainChords(p, tonic) {
+  return p.steps.map(st => { const root = spellDeg(tonic, st.deg, st.semis);
+    return { mine:false, q:st.q, root, bass:null, sym:root + st.q, pc:pcOf(root), rn:rnFor(st, st.q), fn:fnOf(st.semis, st.q), semis:st.semis }; });
+}
+function linkChord(tonic, minorLabel) {
+  const root = spellDeg(tonic, 5, 7);
+  return { mine:false, q:"7", root, bass:null, sym:root + "7", pc:pcOf(root), rn:"V7", fn:"D", semis:7, isLink:true };
+}
+const DIATONIC = { false:[[1,0,"","I"],[2,2,"m","ii"],[3,4,"m","iii"],[4,5,"","IV"],[5,7,"","V"],[6,9,"m","vi"],[7,11,"dim","vii°"]],
+                   true:[[1,0,"m","i"],[2,2,"dim","ii°"],[3,3,"","♭III"],[4,5,"m","iv"],[5,7,"m","v"],[6,8,"","♭VI"],[7,10,"","♭VII"]] };
+function pivotChord(tA, mA, tB, mB) {
+  const pa = pcOf(tA), pb = pcOf(tB);
+  for (const [dA,sA,q,rA] of DIATONIC[mA]) {
+    if (dA === 1 || q === "dim") continue;
+    const pc = (pa + sA) % 12;
+    const hit = DIATONIC[mB].find(([dB,sB,qB]) => dB !== 1 && (pb + sB) % 12 === pc && qB === q);
+    if (hit) return { sym: spellDeg(tA, dA, sA) + q, rA, rB: hit[3] };
+  }
+  return null;
+}
+const MOVES = {
+  false: [
+    {tag:"Same key", d:0, m:false, link:false, why:k => `Stays in ${k}, so every chord still fits the same scale. The contrast comes from the new order of chords.`},
+    {tag:"Relative minor", d:9, m:true, link:true, why:(k,n) => `${n} uses the same seven notes as ${k}, so the mood darkens without feeling like a jump.`},
+    {tag:"Up a fifth", d:7, m:false, link:true, why:(k,n) => `${n} is the closest key on the circle of fifths. Only one note changes, which gives a bright, natural lift.`},
+    {tag:"Down a fifth", d:5, m:false, link:true, why:(k,n) => `${n} is the neighbour on the flat side of the circle. Only one note changes, and the music relaxes.`},
+    {tag:"Parallel minor", d:0, m:true, link:false, why:(k,n) => `Same tonic, opposite mood. Three scale notes drop by a half step, so the home note stays while the colour flips.`},
+    {tag:"Up a whole step", d:2, m:false, link:false, why:(k,n) => `A direct key change to ${n} with no preparation. It is the classic final-chorus lift.`},
+    {tag:"Up a half step", d:1, m:false, link:false, why:(k,n) => `Every note shifts up one fret to ${n}. It is abrupt and raises the energy straight away.`},
+    {tag:"Up a major third", d:4, m:false, link:false, why:(k,n) => `A chromatic mediant. The two tonic chords share one note, which holds the jump together while the colour changes sharply.`},
+    {tag:"Flat-six key", d:8, m:false, link:false, why:(k,n) => `A chromatic mediant that drops to ${n}. The shared note keeps it connected, and it sounds wide and cinematic.`},
+  ],
+  true: [
+    {tag:"Same key", d:0, m:true, link:false, why:k => `Stays in ${k}, so every chord still fits the same scale. The contrast comes from the new order of chords.`},
+    {tag:"Relative major", d:3, m:false, link:true, why:(k,n) => `${n} uses the same seven notes as ${k}, so the music brightens without feeling like a jump.`},
+    {tag:"Parallel major", d:0, m:false, link:false, why:(k,n) => `Same tonic, opposite mood. Three scale notes rise by a half step, so the home note stays while the music opens up.`},
+    {tag:"Up a fifth", d:7, m:true, link:true, why:(k,n) => `${n} is the closest minor key on the sharp side of the circle. Only one note changes, which adds intensity.`},
+    {tag:"Down a fifth", d:5, m:true, link:true, why:(k,n) => `${n} is the neighbour on the flat side of the circle. Only one note changes, and the mood gets heavier.`},
+    {tag:"Up a whole step", d:2, m:true, link:false, why:(k,n) => `A direct key change to ${n} with no preparation. It raises the stakes for a final section.`},
+    {tag:"Up a major third", d:4, m:true, link:false, why:(k,n) => `A chromatic mediant. The two tonic chords share one note, which holds the jump together while the colour changes sharply.`},
+  ],
+};
+function hashRand(str) { let h = 2166136261; for (let i=0;i<str.length;i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return () => { h = Math.imul(h ^ (h >>> 15), 2246822519) ^ Math.imul(h ^ (h >>> 13), 3266489917); return ((h ^= h >>> 16) >>> 0) / 4294967296; }; }
+const famKey = c => { const f = QUAL[c.q].f; return c.pc + (["min","dim","hdim"].includes(f) ? "m" : "M"); };
+const chordSig = chs => [...new Set(chs.map(famKey))].sort().join(",");
+function pickProgression(tonic, minor, used, usedSigs, rnd, curSig, cur, keyChange, plainMode) {
+  const fits = p => isMinorMode(p.mode) === minor && !used.has(p.id) && p.id !== cur.id &&
+    (cur.tags.includes("blues") || S.style === "blues" || !/blues/.test(p.mode)) &&
+    chordSig(plainChords(p, tonic)) !== curSig && !usedSigs.has(chordSig(plainChords(p, tonic)));
+  /* After a key change the first chord must be the new tonic: it confirms the key, and a V7 link only resolves onto it. */
+  const opens = p => (!keyChange || p.steps[0].semis === 0) && (!plainMode || /^(major|minor)$/.test(p.mode));
+  const inStyle = p => S.style === "any" || p.tags.includes(S.style);
+  let pool = PROGS.filter(p => fits(p) && opens(p) && inStyle(p));
+  if (!pool.length) pool = PROGS.filter(p => fits(p) && opens(p));
+  if (!pool.length) return null;
+  let best = null, bs = -1;
+  pool.forEach(p => { const v = p.w + 2 * p.tags.filter(t => cur.tags.includes(t)).length + rnd() * 7; if (v > bs) { bs = v; best = p; } });
+  return best;
+}
+function buildOptions() {
+  const c = S.sel, minor = isMinorMode(c.p.mode), kLabel = keyLabel(c.tonic, minor), curSig = chordSig(S.chords);
+  const rnd = hashRand(c.p.id + c.tonicPc + "|" + S.shuffle), used = new Set(), usedSigs = new Set(), opts = [];
+  const seen = new Set(), last = S.song[S.song.length-1];
+  S.song.forEach(sec => {
+    const k = sec.name + "|" + sectionSig(sec);
+    if (seen.has(k) || sectionSig(sec) === sheetSig()) return; seen.add(k);
+    const change = sec.tonicPc !== c.tonicPc || sec.minor !== minor;
+    opts.push({ back:sec, tag:`Back to ${sec.name}`, tonic:sec.tonic, minor:sec.minor, title:sec.title, chords:sec.chords, pid:sec.pid,
+      link: change ? linkChord(sec.tonic) : null,
+      why:`Returning to something the listener already knows is what makes a song feel like a song. Repetition after contrast feels like arriving home.` });
+  });
+  MOVES[minor].forEach(mv => {
+    const pc = (c.tonicPc + mv.d) % 12, keyChange = !(mv.d === 0 && mv.m === minor), tonic = keyChange ? keyPref(pc, mv.m, c.tonic) : c.tonic;
+    const p = pickProgression(tonic, mv.m, used, usedSigs, rnd, curSig, c.p, keyChange, mv.link);
+    if (!p) return; used.add(p.id); usedSigs.add(chordSig(plainChords(p, tonic)));
+    const nLabel = keyLabel(tonic, mv.m);
+    let why = mv.why(kLabel, nLabel);
+    const piv = mv.d === 0 && mv.m === minor ? null : pivotChord(c.tonic, minor, tonic, mv.m);
+    if (piv) why += ` ${pretty(piv.sym)} belongs to both keys: ${piv.rA} in ${kLabel}, ${piv.rB} in ${nLabel}.`;
+    const link = mv.link ? linkChord(tonic) : null;
+    if (link && S.useLink) why += ` Link chord: ${pretty(link.sym)} is the V7 of ${nLabel} and pulls the ear into it.`;
+    opts.push({ tag:mv.tag, tonic, minor:mv.m, title:p.n, chords:plainChords(p, tonic), pid:p.id, link, why, modeLabel:`${pretty(tonic)} ${modeLabel(p.mode)}` });
+  });
+  return opts;
+}
+const symLine = chs => chs.map(x => pretty(x.sym)).join(" · ");
+function renderNext() {
+  $("nextTitle").textContent = `What comes after ${S.sel.p.n}`;
+  const host = $("nextRows"); host.textContent = "";
+  buildOptions().forEach(o => {
+    const row = el("div","opt"), main = el("div","main"), top = el("div","top");
+    top.append(el("span","tag",o.tag), el("span","nm",o.title), el("span","ky",o.modeLabel || keyLabel(o.tonic, o.minor)));
+    const line = el("div","ch");
+    const useLink = o.link && S.useLink;
+    if (useLink) { const lk = el("span","linkchord",`${pretty(o.link.sym)} → `); line.append(lk); }
+    line.append(symLine(o.chords.length > 8 ? o.chords.slice(0,8) : o.chords) + (o.chords.length > 8 ? " …" : ""));
+    main.append(top, line, el("p","wy",o.why));
+    const acts = el("div","acts"), hear = el("button","ghost","Hear"), add = el("button","primary","Add to song");
+    hear.type = add.type = "button";
+    hear.setAttribute("aria-label", `Hear ${o.tag}: ${o.title}`); add.setAttribute("aria-label", `Add ${o.tag}: ${o.title} to song`);
+    hear.addEventListener("click", () => previewOption(o));
+    add.addEventListener("click", () => addOption(o));
+    acts.append(hear, add); row.append(main, acts); host.append(row);
+  });
+}
+const sheetSig = () => S.chords.map(x => x.sym).join(" ");
+const sectionSig = s => s.chords.map(x => x.sym).join(" ");
+const NAME_CYCLE = ["Verse","Chorus","Verse","Chorus","Bridge","Chorus","Outro"];
+const NAMES = ["Intro","Verse","Pre-chorus","Chorus","Bridge","Solo","Outro"];
+function makeSection(pid, title, tonic, minor, chords, link, name) {
+  return { pid, title, tonic, tonicPc:pcOf(tonic), minor, chords:chords.map(x => ({...x})), link: link ? {...link} : null,
+    name: name || NAME_CYCLE[Math.min(S.song.length, NAME_CYCLE.length-1)], reps:2 };
+}
+function addSheetIfNeeded() {
+  const last = S.song[S.song.length-1];
+  if (last && sectionSig(last) === sheetSig()) return;
+  S.song.push(makeSection(S.sel.p.id, S.sel.p.n, S.sel.tonic, isMinorMode(S.sel.p.mode), S.chords, null));
+}
+function addOption(o) {
+  addSheetIfNeeded();
+  S.song.push(makeSection(o.pid, o.title, o.tonic, o.minor, o.chords, S.useLink ? o.link : null, o.back ? o.back.name : null));
+  if (o.back) S.song[S.song.length-1].reps = o.back.reps;
+  saveSong(); loadSection(S.song[S.song.length-1]); renderSong();
+  const sc = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  document.querySelector(".sheet").scrollIntoView({behavior:sc, block:"start"});
+}
+function loadSection(sec) {
+  search(sec.chords[0].sym, { pick:{ id:sec.pid, tonicPc:sec.tonicPc } });
+  S.chords = sec.chords.map(x => ({...x}));
+  S.voices = voiceAll(S.chords);
+  S.active = 0;
+  renderSheet();
+}
+function flatSong() {
+  const chords = [], owner = [];
+  S.song.forEach((sec, i) => {
+    if (i > 0 && sec.link) { chords.push({...sec.link}); owner.push(i); }
+    for (let r = 0; r < sec.reps; r++) sec.chords.forEach((ch, b) => {
+      const c = {...ch}; if (r === 0 && b === 0) c.label = sec.name + ": ";
+      chords.push(c); owner.push(i);
+    });
+  });
+  return { chords, owner };
+}
+function renderSong() {
+  const has = S.song.length > 0;
+  $("songEmpty").hidden = has; $("songRows").hidden = !has; $("songActions").hidden = !has;
+  const host = $("songRows"); host.textContent = "";
+  S.song.forEach((sec, i) => {
+    const row = el("div","sec"); row.dataset.i = i;
+    const nm = el("select"); nm.id = "secName" + i; nm.setAttribute("aria-label", `Section ${i+1} name`);
+    NAMES.forEach(n => { const op = el("option","",n); op.value = n; nm.append(op); }); nm.value = sec.name;
+    nm.addEventListener("change", () => { sec.name = nm.value; saveSong(); renderNext(); });
+    const rp = el("select"); rp.id = "secReps" + i; rp.setAttribute("aria-label", `Section ${i+1} repeats`);
+    [1,2,3,4].forEach(n => { const op = el("option","",`×${n}`); op.value = n; rp.append(op); }); rp.value = sec.reps;
+    rp.addEventListener("change", () => { sec.reps = +rp.value; saveSong(); renderSong(); });
+    const body = el("button","secbody"); body.type = "button"; body.setAttribute("aria-label", `Open ${sec.name}: ${sec.title}`);
+    const ch = el("span","ch");
+    if (i > 0 && sec.link) ch.append(el("span","linkchord",`${pretty(sec.link.sym)} → `));
+    ch.append(symLine(sec.chords.length > 8 ? sec.chords.slice(0,8) : sec.chords) + (sec.chords.length > 8 ? " …" : ""));
+    body.append(ch, el("span","ky",`${sec.title} · ${keyLabel(sec.tonic, sec.minor)}`));
+    body.addEventListener("click", () => loadSection(sec));
+    const x = el("button","x","×"); x.type = "button"; x.setAttribute("aria-label", `Remove ${sec.name}`);
+    x.addEventListener("click", () => { if (S.queue) stopPlay(); S.song.splice(i,1); saveSong(); renderSong(); renderNext(); });
+    row.append(nm, rp, body, x); host.append(row);
+  });
+  if (has) {
+    const n = flatSong().chords.length, secs = Math.round(n * 240 / S.tempo);
+    $("songMeta").textContent = `${S.song.length} section${S.song.length>1?"s":""} · ${n} bars · ${Math.floor(secs/60)}:${String(secs%60).padStart(2,"0")}`;
+  } else $("songMeta").textContent = "";
+  $("songClear").textContent = "Clear song"; S.clearArmed = false;
+}
+function saveSong() { try { localStorage.setItem("chord-changes-song", JSON.stringify(S.song)); } catch (e) {} }
+function restoreSong() {
+  try { const v = JSON.parse(localStorage.getItem("chord-changes-song") || "[]");
+    if (Array.isArray(v) && v.every(s => s && Array.isArray(s.chords) && s.chords.length && s.tonic && PROGS.some(p => p.id === s.pid))) S.song = v;
+  } catch (e) {}
+}
+function previewOption(o) {
+  const chords = S.chords.slice(-2).concat(o.link && S.useLink ? [o.link] : [], o.chords.slice(0, 8));
+  startPlay(0, { chords, voices:voiceAll(chords), loop:false });
+}
+function playSong() {
+  if (S.queue && S.queue.song) { stopPlay(); return; }
+  const { chords, owner } = flatSong();
+  if (!chords.length) return;
+  startPlay(0, { chords, voices:voiceAll(chords), loop:false, song:true, onBar:i => {
+    document.querySelectorAll(".sec").forEach(r => r.classList.toggle("playing", +r.dataset.i === owner[i]));
+  } });
+}
+function songText() {
+  return S.song.map((s,i) => `${s.name} x${s.reps} (${s.tonic} ${s.minor ? "minor" : "major"}): ${i>0 && s.link ? "[" + s.link.sym + "] " : ""}${s.chords.map(c => c.sym).join(" | ")}`).join("\n");
+}
+async function exportSong(arg) {
+  const { chords } = flatSong();
+  S.xChords = chords; S.xVoices = voiceAll(chords); S.xBase = `Chord-Changes-Song-${S.tempo}bpm`; S.xName = "Chord Changes song";
+  try { await doExport(arg); } finally { S.xChords = S.xVoices = S.xBase = S.xName = null; }
+}
 
 /* ---------- Dice ---------- */
 const PIPS = {1:[4],2:[0,8],3:[0,4,8],4:[0,2,6,8],5:[0,2,4,6,8],6:[0,2,3,5,6,8]};
@@ -789,22 +1052,33 @@ function soundChord(v, t, bar) {
 function setPlayUI() {
   $("playIcon").className = S.playing ? "sq" : "tri";
   $("playText").textContent = S.playing ? "Stop" : "Play";
+  $("songPlay").textContent = S.queue && S.queue.song ? "Stop song" : "Play song";
+  if (!(S.queue && S.queue.song)) document.querySelectorAll(".sec.playing").forEach(r => r.classList.remove("playing"));
 }
-function startPlay(from) {
+function startPlay(from, queue) {
   audio(); freshBus(); clearTimeout(timer);
-  const my = ++gen; S.playing = true; setPlayUI();
+  const my = ++gen; S.playing = true; S.queue = queue || null; setPlayUI();
   playIdx = from; let at = ctx.currentTime + .06;
   const tick = () => {
     if (my !== gen) return;
-    const bar = 240 / S.tempo, i = playIdx % S.chords.length;
-    soundChord(S.voices[i], at, bar);
-    setTimeout(() => { if (my === gen) { S.active = i; updateActive(); } }, Math.max(0, (at - ctx.currentTime)*1000));
+    const Q = S.queue, chords = Q ? Q.chords : S.chords, voices = Q ? Q.voices : S.voices;
+    const bar = 240 / S.tempo;
+    if (Q && playIdx >= chords.length) {
+      setTimeout(() => { if (my === gen) stopPlay(); }, Math.max(0, (at - ctx.currentTime)*1000));
+      return;
+    }
+    const i = playIdx % chords.length;
+    soundChord(voices[i], at, bar);
+    setTimeout(() => { if (my !== gen) return;
+      if (Q) { showChord(chords[i], voices[i]); if (Q.onBar) Q.onBar(i); }
+      else { S.active = i; updateActive(); }
+    }, Math.max(0, (at - ctx.currentTime)*1000));
     at += bar; playIdx = i + 1;
     timer = setTimeout(tick, Math.max(0, (at - ctx.currentTime - .15)*1000));
   };
   tick();
 }
-function stopPlay() { gen++; clearTimeout(timer); S.playing = false; setPlayUI(); if (ctx) freshBus(); }
+function stopPlay() { gen++; clearTimeout(timer); S.playing = false; S.queue = null; setPlayUI(); if (ctx) freshBus(); updateActive(); }
 function audition(i) { audio(); freshBus(); const sv = S.feel; S.feel = "held"; soundChord(S.voices[i], ctx.currentTime + .02, 1.5); S.feel = sv; }
 function tapBar(i) { if (S.playing) { startPlay(i); return; } S.active = i; updateActive(); audition(i); }
 function tapKey(pc) {
@@ -813,12 +1087,13 @@ function tapKey(pc) {
 
 /* ---------- Export ---------- */
 async function renderWav() {
-  const bar = 240 / S.tempo, rate = 44100, n = S.chords.length;
+  const XC = S.xChords || S.chords, XV = S.xVoices || S.voices;
+  const bar = 240 / S.tempo, rate = 44100, n = XC.length;
   const off = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, Math.ceil((n * bar + 2) * rate), rate);
   /* note() draws on the shared ctx and bus; point them at the offline graph just while scheduling. */
   const liveCtx = ctx, liveBus = bus;
   ctx = off; bus = off.createGain(); bus.connect(makeOutput(off));
-  try { S.voices.forEach((v, i) => soundChord(v, i * bar, bar)); }
+  try { XV.forEach((v, i) => soundChord(v, i * bar, bar)); }
   finally { ctx = liveCtx; bus = liveBus; }
   const r = await off.startRendering();
   const L = r.getChannelData(0), R = r.getChannelData(1), len = r.length;
@@ -833,6 +1108,8 @@ async function renderWav() {
   return bytes;
 }
 function buildMidi(name) {
+  name = S.xName || name;
+  const XC = S.xChords || S.chords, XV = S.xVoices || S.voices;
   const PPQ = 480, BAR = PPQ * 4, enc = new TextEncoder();
   const vlq = v => { const a = [v & 127]; while ((v >>= 7)) a.unshift((v & 127) | 128); return a; };
   const str = s => Array.from(enc.encode(s));
@@ -848,9 +1125,9 @@ function buildMidi(name) {
   const usec = Math.round(60000000 / S.tempo);
   const meta = [{t:0,o:0,d:metaText(3,name)},{t:0,o:0,d:[0xFF,0x58,4,4,2,24,8]},{t:0,o:0,d:[0xFF,0x51,3,(usec>>16)&255,(usec>>8)&255,usec&255]}];
   const chords = [{t:0,o:0,d:metaText(3,"Chords")}], bass = [{t:0,o:0,d:metaText(3,"Bass")}];
-  S.voices.forEach((v, i) => {
+  XV.forEach((v, i) => {
     const t = i * BAR;
-    meta.push({t, o:1, d:metaText(6, S.chords[i].sym)});
+    meta.push({t, o:1, d:metaText(6, (XC[i].label || "") + XC[i].sym)});
     add(bass, 1, v.bass, t, BAR - 24, 92);
     if (S.feel === "held") v.upper.forEach(m => add(chords, 0, m, t, BAR - 24, 78));
     else if (S.feel === "pulse") for (let b=0;b<4;b++) v.upper.forEach(m => add(chords, 0, m, t + b*PPQ, PPQ*.7|0, b%2 ? 66 : 82));
@@ -860,6 +1137,7 @@ function buildMidi(name) {
   return new Uint8Array([...head, ...track(meta), ...track(chords), ...track(bass)]);
 }
 function exportBase() {
+  if (S.xBase) return S.xBase;
   const c = S.sel, safe = s => s.replace(/#/g,"sharp").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"");
   return `${safe(c.p.n)}-${safe(c.tonic)}-${safe(c.p.mode)}-${S.tempo}bpm`;
 }
@@ -896,6 +1174,22 @@ async function doExport(kind) {
 }
 
 /* ---------- Wiring ---------- */
+$("songAdd").addEventListener("click", () => { S.song.push(makeSection(S.sel.p.id, S.sel.p.n, S.sel.tonic, isMinorMode(S.sel.p.mode), S.chords, null)); saveSong(); renderSong(); renderNext(); });
+$("songPlay").addEventListener("click", playSong);
+$("songCopy").addEventListener("click", () => {
+  const b = $("songCopy"), done = m => { b.textContent = m; setTimeout(() => b.textContent = "Copy song", 1500); };
+  try { navigator.clipboard.writeText(songText()).then(() => done("Copied"), () => done("Copy failed")); } catch (e) { done("Copy failed"); }
+});
+$("songClear").addEventListener("click", () => {
+  if (!S.clearArmed) { S.clearArmed = true; $("songClear").textContent = "Tap again to clear"; return; }
+  if (S.queue) stopPlay(); S.song = []; saveSong(); renderSong(); renderNext();
+});
+$("nextShuffle").addEventListener("click", () => { S.shuffle++; renderNext(); });
+$("useLink").addEventListener("change", e => { S.useLink = e.target.checked; renderNext(); });
+$("tempo").addEventListener("input", () => { if (S.song.length) renderSong(); });
+$("songMidi").addEventListener("click", () => exportSong("midi"));
+$("songWav").addEventListener("click", () => exportSong("wav"));
+
 $("exportMidi").addEventListener("click", () => doExport("midi"));
 $("exportWav").addEventListener("click", () => doExport("wav"));
 $("form").addEventListener("submit", e => { e.preventDefault(); search($("chordInput").value); });
@@ -910,7 +1204,10 @@ $("copyBtn").addEventListener("click", () => {
   try { navigator.clipboard.writeText(txt).then(() => done("Copied"), () => done(txt)); } catch (e) { done(txt); }
 });
 buildPiano(); showDie(5); renderStyles(); renderFeels();
+restoreSong();
 search("Am");
+if (S.song.length) loadSection(S.song[S.song.length-1]);
+renderSong();
 if ("serviceWorker" in navigator && location.protocol === "https:" || location.hostname === "localhost") {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
