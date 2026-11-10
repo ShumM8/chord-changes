@@ -291,8 +291,8 @@ h3 { margin: 0; font: italic 600 1.45rem/1.2 var(--display); }
       <div class="chips" id="feels" role="group" aria-label="Playing style"></div>
       <label class="check"><input id="rot" type="checkbox" checked> Start on my chord</label>
       <button class="ghost" id="copyBtn" type="button">Copy chords</button>
-      <button class="ghost" id="exportMidi" type="button">Download MIDI</button>
-      <button class="ghost" id="exportWav" type="button">Download WAV</button>
+      <button class="ghost" id="exportMidi" type="button">Progression MIDI</button>
+      <button class="ghost" id="exportWav" type="button">Progression WAV</button>
     </div>
     <p id="exportMsg" role="status" hidden></p>
     <p id="soundHelp" role="status">Can’t hear it? Turn up your volume and check that this tab isn’t muted. On an iPhone, also turn off silent mode.</p>
@@ -335,6 +335,7 @@ h3 { margin: 0; font: italic 600 1.45rem/1.2 var(--display); }
       </span>
       <span class="songmeta" id="songMeta"></span>
     </div>
+    <p class="note" id="midiTip" hidden>Importing into GarageBand? Set the song section to Automatic first, or it keeps only the first 8 bars.</p>
   </section>
 
   <section class="nextbox" aria-label="What comes next">
@@ -907,7 +908,7 @@ function flatSong() {
 }
 function renderSong() {
   const has = S.song.length > 0;
-  $("songEmpty").hidden = has; $("songRows").hidden = !has; $("songActions").hidden = !has;
+  $("songEmpty").hidden = has; $("midiTip").hidden = !has; $("songRows").hidden = !has; $("songActions").hidden = !has;
   const host = $("songRows"); host.textContent = "";
   S.song.forEach((sec, i) => {
     const row = el("div","sec"); row.dataset.i = i;
